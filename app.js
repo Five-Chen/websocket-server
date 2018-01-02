@@ -1,38 +1,62 @@
-const WebSocketServer = require('ws').Server;
+var app = require('express')();
+var http = require('http').Server(app);
+var io = require('socket.io')(http);
 
-var ws = new WebSocketServer({
-	port:6543, //Listen Port
-	verifyClient: socketVerify //用于验证连接的函数
-});
+app.get('/',function(req, res){
+	res.send(`<h1>Welcome Realtime Server</h1>`);
+})
 
-function socketVerify (info) {
-	// 做一些事情来验证连接的合法性，如果允许连接则 return true, 否则 return false
-	let origin = info.origin.match(/^(:?.+\:\/\/)([^\/]+)/);
-	if(origin.length >= 3) {
-		return true;
-	}
-	return false;
-}
+//Online users
+var onlineUsers = {};
 
-wx.on('connection',function(wsocket){
-	wsocket.on('message', message);
-	wsocket.on('close', close);
-	wsocket.on('error', error);
-	wsocket.on('open', open);
-});
+//Online User count
+var onlineCount = 0;
 
-function message (msg) {
-	//对接收到的消息做的操作
-}
+io.on('connection', function(socket){
+	console.log('A user connnected');
 
-function error (err) {
-	//处理错误
-}
+	//listen new user login
+	socket.on('login', function(obj){
+		//将新加入的用户的唯一标识当作socket的名称，后面用户退出的时候会用到
+		socket.name = obj.userid;
 
-function close () {
-	//连接关闭时的操作
-}
+		//检查子啊先列表，如果不在里面就加入
+		if(!onlineUsers.hasOwnProperty(obj.userid)) {
+			onlineUsers[obj.userid] = obj.username;
+			//在线人数+1
+			onlineCount++;
+		}
+	});
 
-function open () {
-	//连接开启后做的操作
-}
+	//listen user logout
+	socket.on('disconnect', function(){
+		if(onlineUsers.hasOwnProperty(socket.name){
+			//退出用户的信息
+			var obj = {
+				userid:socket.name,
+				username:onlineUsers[socket.name]
+			};
+
+			//删除
+			delete onlineUsers[socket.name];
+			//在线人数-1
+			onlineCount--；
+
+			//向所有客户端广播用户退出
+			io.emit('logout', {
+				onlineUsers:onlineUsers,
+				onlineCount:onlineCount,
+				user:obj
+			})
+
+			console.log(obj.username + '退出了聊天室');
+		})
+	});
+
+	//监听用户发布聊天内容
+	socket.on('message', function(obj){
+		//向所有客户端广播发布的消息
+		io.emit('message',obj);
+		console.log(obj.username + '说：' + obj.content);
+	})
+})
